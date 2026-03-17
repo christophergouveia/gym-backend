@@ -52,17 +52,26 @@ export class AuthService {
   }
 
   async loginGymAdmin(email: string, password: string) {
-    const gym = await prisma.gym.findUnique({
-      where: { email },
-    });
-
-    if (!gym || !gym.isActive) throw new Error("Credenciais inválidas");
-
+    // ⚡ Bolt Optimization: Combined sequential database queries into a single query
+    // Previously, this required two sequential roundtrips (Gym then Professional).
+    // Using an include allows us to fetch both in a single database operation,
+    // reducing latency significantly during admin logins.
     const adminAccount = await prisma.professional.findFirst({
-      where: { gymId: gym.id, email, isActive: true },
+      where: {
+        email,
+        isActive: true,
+        gym: {
+          email,
+          isActive: true
+        }
+      },
+      include: {
+        gym: true
+      }
     });
 
     if (!adminAccount) throw new Error("Credenciais inválidas");
+
     const isPasswordValid = await bcrypt.compare(
       password,
       adminAccount.passwordHash,
@@ -75,6 +84,8 @@ export class AuthService {
       gymId: adminAccount.gymId,
       role: "GYM_ADMIN",
     });
+
+    const { gym } = adminAccount;
 
     return { token, gym };
   }
